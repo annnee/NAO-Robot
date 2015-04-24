@@ -12,6 +12,7 @@ import scipy
 import numpy as np
 from sklearn import mixture
 import sys, getopt, re
+import math
 
 class CommandLine:
 	def __init__(self):
@@ -82,7 +83,7 @@ class TrainingData:
 		myAudio.start()
 		
 		try:
-			azimuth = range(-90,91, self.AZIMUTH_DELTA)
+			azimuth = range(50,91, self.AZIMUTH_DELTA)
 			
 			for angle in azimuth:
 				speechProxy.say("Recording measurements at " + str(angle) + " degrees")
@@ -144,7 +145,8 @@ class ProcessData:
 		for data_file in raw_data_files:
 			data = np.loadtxt(data_file)
 			azimuth = data_file.split("_")[0]
-			gmm = mixture.GMM(n_components=2)
+			gmm = mixture.GMM(n_components=1)
+			gmm.fit(data)
 			self.gmms[int(azimuth)] = gmm
 
 		# for key in itds:
@@ -169,7 +171,8 @@ class SoundLocalizer:
 		motion = ALProxy("ALMotion",self.constants.NAO_IP,self.constants.NAO_PORT)
 		motion.setStiffnesses(["HeadYaw","HeadPitch"],[1.0,1.0])
 
-
+		# prepare robot for speech
+		speechProxy = ALProxy("ALTextToSpeech",self.constants.NAO_IP,self.constants.NAO_PORT)
 
 		# start the audio receiver going
 		global myAudio
@@ -179,7 +182,7 @@ class SoundLocalizer:
 		
 		try:
 			data = []
-
+			sleep(1.0)
 			while True:
 
 				# collect enough ITDs and ILDs
@@ -227,9 +230,10 @@ class SoundLocalizer:
 					# sort probability dictionary
 					probabilities = sorted(probabilities.items(), key=lambda x: x[1], reverse=True) 
 					# get angle with highest probability
-					desiredAngle = probabilities[0]
-					motion.setAngles("HeadYaw",[desiredAngle*almath.TO_RAD],self.MAX_MOTOR_SPEED)
+					desiredAngle = probabilities[0][0]
 
+					motion.setAngles("HeadYaw",[desiredAngle*almath.TO_RAD],self.constants.MAX_MOTOR_SPEED)
+					speechProxy.say("Sound detected at " + str(desiredAngle) + " degrees")
 					# reset arrays
 					data = []
 					myBroker.shutdown()
