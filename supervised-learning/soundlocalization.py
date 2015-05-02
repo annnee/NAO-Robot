@@ -13,6 +13,7 @@ import numpy as np
 from sklearn import mixture
 import sys, getopt, re
 import math
+import pickle
 
 class CommandLine:
 	def __init__(self):
@@ -46,7 +47,9 @@ class CommandLine:
 # A class that declares constants shared across multiple classes
 class Constants:
 	def __init__(self):
-		self.NAO_IP = "169.254.88.3" #"169.254.103.126" 
+		# Walter - "169.254.103.126"
+		# Skylar - "169.254.88.3"
+		self.NAO_IP = "169.254.103.126"
 		self.NAO_PORT = 9559
 		self.CHANNELS = 32  	# number of channels
 		self.BUFFER_SIZE = 4096 # this is the size of the audio buffer used by naoqi
@@ -60,8 +63,7 @@ class TrainingData:
 	def __init__(self, constants):
 		self.constants = constants
 		# how many ITDs and ILDs we want to collect for training 
-		self.NUM_MEASUREMENTS = 200 # number of ITD's and ILD's to collect for each azimuth
-		self.CHANNEL = 22			# the channel we want to extract data from
+		self.NUM_MEASUREMENTS = 150 # number of ITD's and ILD's to collect for each azimuth
 		self.AZIMUTH_DELTA = 10		# how much to increment by
 
 	def collectTrainingData(self):
@@ -83,15 +85,19 @@ class TrainingData:
 		myAudio.start()
 		
 		try:
-			azimuth = range(50,91, self.AZIMUTH_DELTA)
+			azimuth = range(-90,91, self.AZIMUTH_DELTA)
 			
 			for angle in azimuth:
 				speechProxy.say("Recording measurements at " + str(angle) + " degrees")
-				# format: [ [itd1,ild1], [itd2,ild2], etc... ]
-				data = []
+				print "Recording measurements at " + str(angle) + " degrees"
+				# format: {channel: [[itd1,ild1], [itd2,ild2],...], ... }
+				# initalize dictionary
+				data = {}
+				data[0] = []
 				motion.setAngles("HeadYaw",[angle*almath.TO_RAD],self.constants.MAX_MOTOR_SPEED)
 
-				while len(data) < self.NUM_MEASUREMENTS:
+				# if we haven't collected the desired number of measurements for each channel for each location
+				while len(data[0]) < self.NUM_MEASUREMENTS:
 					sleep(0.1)
 
 					left_sig = myAudio.soundData[2,:]
@@ -99,27 +105,33 @@ class TrainingData:
 					
 					right_sig = myAudio.soundData[3,:]
 					right_an = auditory_nerve(right_sig,self.constants.LOWER_FREQ,self.constants.UPPER_FREQ,self.constants.CHANNELS,48000)
-				
-					x = left_an[self.CHANNEL,2048:self.constants.BUFFER_SIZE-1]
-					y = right_an[self.CHANNEL,2048:self.constants.BUFFER_SIZE-1]
-
-					# compute ILD
-					left_energy = np.sum(np.square(x))
-					right_energy = np.sum(np.square(y))
-					ild = 10.0*np.log10(left_energy/right_energy)
-
-					# compute ITD
-					ccg = cross_correlation(x,y,self.constants.MAX_DELAY)
-					ccg = normalise(ccg)
-					itd = np.argmax(ccg)-self.constants.MAX_DELAY
-
-					data.append([itd,ild])
 					
-				# save array to file
-				filename = repr(angle) + '_ITDS_ILDS.txt'
+					for chan in range(0,self.constants.CHANNELS):
+					
+						x = left_an[chan,2048:self.constants.BUFFER_SIZE-1]
+						y = right_an[chan,2048:self.constants.BUFFER_SIZE-1]
 
-				# save itds and ilds in a text file
-				np.savetxt(filename, np.array(data))
+						# compute ILD
+						left_energy = np.sum(np.square(x))
+						right_energy = np.sum(np.square(y))
+
+						ild = 0.0 if (left_energy == 0.0 or right_energy == 0.0) else (10.0*np.log10(left_energy/right_energy))
+
+						# compute ITD
+						ccg = cross_correlation(x,y,self.constants.MAX_DELAY)
+						ccg = normalise(ccg)
+						itd = np.argmax(ccg)-self.constants.MAX_DELAY
+
+						if chan not in data:
+							data[chan] = [[itd,ild]]
+						else:
+							ls = data[chan]
+							ls.append([itd,ild])
+							data[chan] = ls
+					
+				# save itds and ilds in a pickle file
+				filename = repr(angle) + '_ITDS_ILDS.p'
+				pickle.dump(data, open(filename, "wb" ))
 
 			speechProxy.say("Finished!")
 			myBroker.shutdown()
@@ -136,31 +148,36 @@ class TrainingData:
 class ProcessData:
 	def __init__(self):
 		# Get all the raw data files containing ITDs and ILDs
-		raw_data_files =  glob.glob("*.txt")
+		raw_data_files =  glob.glob("*.p")
 
-		# Each key (azimuth) will be matched to a GMM object
+		# Each key (azimuth) will be mapped to a dictionary in the form of {channel: gmm obj, channel2: gmm obj2, ...}
 		self.gmms = dict()
 
-		# Fit the ITD's and ILD's into a GMM for each azimuth and store it in a dictionary
+		# Fit the ITD's and ILD's into a GMM for each channel for each azimuth and store it in a dictionary
 		for data_file in raw_data_files:
-			data = np.loadtxt(data_file)
-			azimuth = data_file.split("_")[0]
-			gmm = mixture.GMM(n_components=1)
-			gmm.fit(data)
-			self.gmms[int(azimuth)] = gmm
 
-		# for key in itds:
-		# 	print np.round(itds[key].means_, 2)
-		# 	print np.round(ilds[key].means_, 2)
-		# 	print "-----"
+			# Format = {channel: [[itd,ild],[itd2,ild2],...]}
+			data = pickle.load(open(data_file, "rb"))
+			azimuth = data_file.split("_")[0]
+			self.gmms[int(azimuth)] = dict()
+
+			for channel in data:
+				itds_ilds = data[channel] 
+				gmm = mixture.GMM(n_components=1)
+				gmm.fit(itds_ilds)
+
+				# print channel
+				# if channel not in self.gmms:
+				# 	self.gmms[int(azimuth)] = {channel: gmm}
+				# else:
+				self.gmms[int(azimuth)][channel] = gmm
 
 # The sound localization module
 class SoundLocalizer:
 	def __init__(self, constants, processedData):
 		self.constants = constants
 		self.GMMS = processedData.gmms
-		self.CHANNEL = 22 # the channel we want
-		self.NUM_MEASUREMENTS = 5 
+		self.NUM_MEASUREMENTS = 10 
 
 	def localizeSound(self):
 		# we need a broker object to handle subscription of one module to another
@@ -179,14 +196,16 @@ class SoundLocalizer:
 		# zero means all channels, 48kHz
 		myAudio = AudioReceiver("myAudio",self.constants.NAO_IP,self.constants.NAO_PORT,0)
 		myAudio.start()
-		
+		speechProxy.say("I am listening")
+
 		try:
-			data = []
+			# format: {chan: [[itd,ild],...], chan2: [[itd2,ild2,...]], ...}
+			data = dict()
+			data[0] = []
 			sleep(1.0)
 			while True:
-
-				# collect enough ITDs and ILDs
-				if len(data) < self.NUM_MEASUREMENTS:	
+				# collect enough ITDs and ILDs in each frequency channel
+				if len(data[0]) < self.NUM_MEASUREMENTS:	
 					sleep(0.1)
 					
 					left_sig = myAudio.soundData[2,:]
@@ -194,48 +213,60 @@ class SoundLocalizer:
 					
 					right_sig = myAudio.soundData[3,:]
 					right_an = auditory_nerve(right_sig,self.constants.LOWER_FREQ,self.constants.UPPER_FREQ,self.constants.CHANNELS,48000)
-				
-					x = left_an[self.CHANNEL,2048:self.constants.BUFFER_SIZE-1]
-					y = right_an[self.CHANNEL,2048:self.constants.BUFFER_SIZE-1]
+					
+					for chan in range(0,self.constants.CHANNELS):
+						x = left_an[chan,2048:self.constants.BUFFER_SIZE-1]
+						y = right_an[chan,2048:self.constants.BUFFER_SIZE-1]
 
-					# compute ILD
-					left_energy = np.sum(np.square(x))
-					right_energy = np.sum(np.square(y))
-					ild = 10.0*np.log10(left_energy/right_energy)
+						# compute ILD
+						left_energy = np.sum(np.square(x))
+						right_energy = np.sum(np.square(y))
+						ild = 0.0 if (left_energy == 0.0 or right_energy == 0.0) else (10.0*np.log10(left_energy/right_energy))
 
-					# compute ITD
-					ccg = cross_correlation(x,y,self.constants.MAX_DELAY)
-					ccg = normalise(ccg)
-					itd = np.argmax(ccg)-self.constants.MAX_DELAY
+						# compute ITD
+						ccg = cross_correlation(x,y,self.constants.MAX_DELAY)
+						ccg = normalise(ccg)
+						itd = np.argmax(ccg)-self.constants.MAX_DELAY
 
-					data.append([itd,ild])
+
+						if chan not in data.keys():
+							data[chan] = [[itd,ild]]
+						else:
+							ls = data[chan]
+							ls.append([itd,ild])
+							data[chan] = ls
 
 				# compute log probability 
 				else:
 
-					# format: {azimuth: average probability}
+					# format: {azimuth: product of probabilities across 32 channels }
 					probabilities = dict()
 
-					for azimuth in self.GMMS.keys():
-						gmm = self.GMMS[azimuth]
-						# convert each log probability to probability and sum it
-						logProbs = gmm.score(data)
-						prob = 0
-						for x in logProbs:
-							prob = prob + math.pow(math.e, x)
+					for azimuth in self.GMMS:
+						# grab all the gmms for an azimuth
+						# each azimuth has 32 gmms - one gmm for each channel
+						gmms = self.GMMS[azimuth]
 
+						medianLogProbs = 0
+
+						for channel in gmms:
+							logprob = gmms[channel].score(data[channel])
+							medianLogProbs += np.median(logprob)
+						
+						# convert the sum of the median log probabilities to probability
 						# map azimuth to average probability and store it in a dictionary
-						probabilities[azimuth] = prob/len(logProbs)
+						probabilities[azimuth] = math.pow(math.e, medianLogProbs)
 
 					# sort probability dictionary
 					probabilities = sorted(probabilities.items(), key=lambda x: x[1], reverse=True) 
+					print probabilities
 					# get angle with highest probability
-					desiredAngle = probabilities[0][0]
+					desiredAngle = -probabilities[0][0]
 
 					motion.setAngles("HeadYaw",[desiredAngle*almath.TO_RAD],self.constants.MAX_MOTOR_SPEED)
 					speechProxy.say("Sound detected at " + str(desiredAngle) + " degrees")
 					# reset arrays
-					data = []
+					
 					myBroker.shutdown()
 					sleep(2)
 					sys.exit(0)
