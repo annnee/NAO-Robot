@@ -9,7 +9,7 @@ from audioreceiver import AudioReceiver
 
 def main():
 
-	NAO_IP = "169.254.103.126" # "169.254.88.3" 
+	NAO_IP = "169.254.103.126"  # "169.254.88.3"
 	NAO_PORT = 9559
 	CHANNELS = 32 # number of frequency channels
 	BUFFER_SIZE = 4096 # this is the size of the audio buffer used by naoqi
@@ -49,7 +49,8 @@ def main():
 		itds = []
 		ilds2 = []
 		itds2 = []
-		fig2, ax2 = plt.subplots(2,1)
+
+		fig2, ax2 = plt.subplots(5,1)
 		plt.xlabel("ILD")
 		plt.ylabel("ITD")
 		#ax2[0].set_title("ILD vs ITD for ch 20")#+ lowerF+(3*freqRange)+ "-"+ lowerF+((3+1)*freqRange)+"Hz")
@@ -86,18 +87,18 @@ def main():
 				ild = 10.0*np.log10(left_energy/right_energy)
 				print "channel",chan, "freq range: ", lowerF+(chan*freqRange), "-", lowerF+((chan+1)*freqRange), "Hz, ILD:", ild, "ITD:", itd
 
-				if (chan==22):
+				if (chan==27):
 					ilds.append(ild)
 					itds.append(itd)
 					H, xedges, yedges = np.histogram2d(itds, ilds, bins=(xedges, yedges))
 					im = ax2[0].imshow(H, interpolation='nearest', origin='low', aspect='auto', extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]])
 
-				elif (chan==31):
+				elif (chan==28):
 					ilds2.append(ild)
 					itds2.append(itd)
 					H, xedges, yedges = np.histogram2d(itds2, ilds2, bins=(xedges, yedges))
 					im = ax2[1].imshow(H, interpolation='nearest', origin='low', aspect='auto', extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]])
-
+			
 			print "---------------------------------------------"		
 			# prevents figure from freezing on Windows
 			plt.pause(0.00001)

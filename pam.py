@@ -1,3 +1,4 @@
+# Written by Dr. Guy Brown
 import scipy.signal as sp
 import numpy as np
 import math
@@ -29,7 +30,26 @@ def rate_map(x,lowcf,highcf,numchans,fs,ti_decay=8.0,hopsize_ms=10.0):
 	ratemap[ratemap<0] = 0.0
 	ratemap = np.power(ratemap,0.3)
 	return ratemap
-	
+
+def auditory_nerve(x,lowcf,highcf,numchans,fs):
+	cf = make_erb_cfs(lowcf,highcf,numchans)
+	anerve = np.zeros((numchans,x.size))
+	tp = 2.0*pi
+	tpt = tp/fs
+	wcf = 2.0*pi*cf
+	kt = np.arange(0,x.size)/float(fs)
+	bw = erb(cf)*1.014
+	asc = np.exp(-bw*tpt)
+	gain = np.power((bw*tpt),4.0)/3.0
+	for c in range(0,numchans):
+		a = asc[c]
+		q = np.exp(-1j*wcf[c]*kt)*x
+		p = sp.lfilter([1,0],[1,-4*a,6*a*a,-4*a*a*a,a*a*a*a],q)
+		u = sp.lfilter([1,4*a,4*a*a,0],[1,0],p)
+		anerve[c,:] = gain[c]*np.real(u)
+	anerve[anerve<0] = 0.0
+	return anerve
+		
 def make_erb_cfs(lowf,highf,n):
     return erb_rate_to_hz(np.linspace(hz_to_erb_rate(lowf),hz_to_erb_rate(highf),n))
 

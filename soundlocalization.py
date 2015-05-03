@@ -131,7 +131,7 @@ class TrainingData:
 					
 				# save itds and ilds in a pickle file
 				filename = repr(angle) + '_ITDS_ILDS.p'
-				pickle.dump(data, open(filename, "wb" ))
+				pickle.dump(data, open("Training-Data/"+filename, "wb" ))
 
 			speechProxy.say("Finished!")
 			myBroker.shutdown()
@@ -148,7 +148,7 @@ class TrainingData:
 class ProcessData:
 	def __init__(self):
 		# Get all the raw data files containing ITDs and ILDs
-		raw_data_files =  glob.glob("*.p")
+		raw_data_files =  glob.glob("Training-Data/*.p")
 
 		if len(raw_data_files) == 0:
 			print "No training data found. Please collect training data before running this class"
@@ -163,6 +163,7 @@ class ProcessData:
 
 				# Format = {channel: [[itd,ild],[itd2,ild2],...]}
 				data = pickle.load(open(data_file, "rb"))
+				data_file = data_file.replace("Training-Data\\", "")
 				azimuth = data_file.split("_")[0]
 				self.gmms[int(azimuth)] = dict()
 
