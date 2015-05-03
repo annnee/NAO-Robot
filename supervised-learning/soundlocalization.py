@@ -2,8 +2,6 @@
 
 from naoqi import ALProxy, ALModule, ALBroker
 from time import sleep
-import sys
-import matplotlib.pyplot as plt
 from pam import rate_map, auditory_nerve, cross_correlation, normalise
 from audioreceiver import AudioReceiver
 import almath
@@ -94,7 +92,9 @@ class TrainingData:
 				# initalize dictionary
 				data = {}
 				data[0] = []
-				motion.setAngles("HeadYaw",[angle*almath.TO_RAD],self.constants.MAX_MOTOR_SPEED)
+
+				# we need to rotate the head the opposite direction so that during sound localization, it turns its head in the right direction
+				motion.setAngles("HeadYaw",[-angle*almath.TO_RAD],self.constants.MAX_MOTOR_SPEED)
 
 				# if we haven't collected the desired number of measurements for each channel for each location
 				while len(data[0]) < self.NUM_MEASUREMENTS:
@@ -150,27 +150,28 @@ class ProcessData:
 		# Get all the raw data files containing ITDs and ILDs
 		raw_data_files =  glob.glob("*.p")
 
-		# Each key (azimuth) will be mapped to a dictionary in the form of {channel: gmm obj, channel2: gmm obj2, ...}
-		self.gmms = dict()
+		if len(raw_data_files) == 0:
+			print "No training data found. Please collect training data before running this class"
+			sys.exit(0)
 
-		# Fit the ITD's and ILD's into a GMM for each channel for each azimuth and store it in a dictionary
-		for data_file in raw_data_files:
+		else:
+			# Each key (azimuth) will be mapped to a dictionary in the form of {channel: gmm obj, channel2: gmm obj2, ...}
+			self.gmms = dict()
 
-			# Format = {channel: [[itd,ild],[itd2,ild2],...]}
-			data = pickle.load(open(data_file, "rb"))
-			azimuth = data_file.split("_")[0]
-			self.gmms[int(azimuth)] = dict()
+			# Fit the ITD's and ILD's into a GMM for each channel for each azimuth and store it in a dictionary
+			for data_file in raw_data_files:
 
-			for channel in data:
-				itds_ilds = data[channel] 
-				gmm = mixture.GMM(n_components=1)
-				gmm.fit(itds_ilds)
+				# Format = {channel: [[itd,ild],[itd2,ild2],...]}
+				data = pickle.load(open(data_file, "rb"))
+				azimuth = data_file.split("_")[0]
+				self.gmms[int(azimuth)] = dict()
 
-				# print channel
-				# if channel not in self.gmms:
-				# 	self.gmms[int(azimuth)] = {channel: gmm}
-				# else:
-				self.gmms[int(azimuth)][channel] = gmm
+				for channel in data:
+					itds_ilds = data[channel] 
+					gmm = mixture.GMM(n_components=1)
+					gmm.fit(itds_ilds)
+
+					self.gmms[int(azimuth)][channel] = gmm
 
 # The sound localization module
 class SoundLocalizer:
@@ -196,13 +197,13 @@ class SoundLocalizer:
 		# zero means all channels, 48kHz
 		myAudio = AudioReceiver("myAudio",self.constants.NAO_IP,self.constants.NAO_PORT,0)
 		myAudio.start()
-		speechProxy.say("I am listening")
 
 		try:
 			# format: {chan: [[itd,ild],...], chan2: [[itd2,ild2,...]], ...}
 			data = dict()
 			data[0] = []
-			sleep(1.0)
+			sleep(0.5)
+			speechProxy.say("I am listening")
 			while True:
 				# collect enough ITDs and ILDs in each frequency channel
 				if len(data[0]) < self.NUM_MEASUREMENTS:	
@@ -261,15 +262,17 @@ class SoundLocalizer:
 					probabilities = sorted(probabilities.items(), key=lambda x: x[1], reverse=True) 
 					print probabilities
 					# get angle with highest probability
-					desiredAngle = -probabilities[0][0]
+					desiredAngle = probabilities[0][0]
 
 					motion.setAngles("HeadYaw",[desiredAngle*almath.TO_RAD],self.constants.MAX_MOTOR_SPEED)
 					speechProxy.say("Sound detected at " + str(desiredAngle) + " degrees")
-					# reset arrays
-					
-					myBroker.shutdown()
+
+					# reset dictionary
+					data = dict()
+					data[0] = []
+					#myBroker.shutdown()
 					sleep(2)
-					sys.exit(0)
+					#sys.exit(0)
 
 		except KeyboardInterrupt:
 			print "Interrupted by user, shutting down"
