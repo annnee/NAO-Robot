@@ -38,7 +38,7 @@ class CommandLine:
 				TrainingData(constants).collectTrainingData()
 
 			elif opt in ("-l", "--localize sound"):
-				processedData = ProcessData()
+				processedData = ProcessData(constants)
 				SoundLocalizer(constants, processedData).localizeSound()
 
 
@@ -55,13 +55,14 @@ class Constants:
 		self.MAX_MOTOR_SPEED = 0.2
 		self.LOWER_FREQ = 100
 		self.UPPER_FREQ = 5000
+		self.DATA_FOLDER = "Walter-250-Anechoic-White-Noise"# folder name containing training data
 
 # Collects training data to be used in the sound localization module
 class TrainingData:
 	def __init__(self, constants):
 		self.constants = constants
 		# how many ITDs and ILDs we want to collect for training 
-		self.NUM_MEASUREMENTS = 150 # number of ITD's and ILD's to collect for each azimuth
+		self.NUM_MEASUREMENTS = 250 # number of ITD's and ILD's to collect for each azimuth
 		self.AZIMUTH_DELTA = 10		# how much to increment by
 
 	def collectTrainingData(self):
@@ -86,16 +87,16 @@ class TrainingData:
 			azimuth = range(-90,91, self.AZIMUTH_DELTA)
 			
 			for angle in azimuth:
+
+				# we need to rotate the head the opposite direction so that during sound localization, it turns its head in the right direction
+				motion.setAngles("HeadYaw",[-angle*almath.TO_RAD],self.constants.MAX_MOTOR_SPEED)
+
 				speechProxy.say("Recording measurements at " + str(angle) + " degrees")
 				print "Recording measurements at " + str(angle) + " degrees"
 				# format: {channel: [[itd1,ild1], [itd2,ild2],...], ... }
 				# initalize dictionary
 				data = {}
 				data[0] = []
-
-				# we need to rotate the head the opposite direction so that during sound localization, it turns its head in the right direction
-				motion.setAngles("HeadYaw",[-angle*almath.TO_RAD],self.constants.MAX_MOTOR_SPEED)
-
 				# if we haven't collected the desired number of measurements for each channel for each location
 				while len(data[0]) < self.NUM_MEASUREMENTS:
 					sleep(0.1)
@@ -131,7 +132,7 @@ class TrainingData:
 					
 				# save itds and ilds in a pickle file
 				filename = repr(angle) + '_ITDS_ILDS.p'
-				pickle.dump(data, open("Training-Data/"+filename, "wb" ))
+				pickle.dump(data, open(self.constants.DATA_FOLDER+"/"+filename, "wb" ))
 
 			speechProxy.say("Finished!")
 			myBroker.shutdown()
@@ -146,9 +147,9 @@ class TrainingData:
 
 # Processes training data to be used in the sound localization module
 class ProcessData:
-	def __init__(self):
+	def __init__(self, constants):
 		# Get all the raw data files containing ITDs and ILDs
-		raw_data_files =  glob.glob("Training-Data/*.p")
+		raw_data_files =  glob.glob(constants.DATA_FOLDER+"/*.p")
 
 		if len(raw_data_files) == 0:
 			print "No training data found. Please collect training data before running this class"
@@ -163,7 +164,7 @@ class ProcessData:
 
 				# Format = {channel: [[itd,ild],[itd2,ild2],...]}
 				data = pickle.load(open(data_file, "rb"))
-				data_file = data_file.replace("Training-Data\\", "")
+				data_file = data_file.replace(constants.DATA_FOLDER+"\\", "")
 				azimuth = data_file.split("_")[0]
 				self.gmms[int(azimuth)] = dict()
 
@@ -179,7 +180,7 @@ class SoundLocalizer:
 	def __init__(self, constants, processedData):
 		self.constants = constants
 		self.GMMS = processedData.gmms
-		self.NUM_MEASUREMENTS = 10 
+		self.NUM_MEASUREMENTS = 15 
 
 	def localizeSound(self):
 		# we need a broker object to handle subscription of one module to another
@@ -203,11 +204,13 @@ class SoundLocalizer:
 			# format: {chan: [[itd,ild],...], chan2: [[itd2,ild2,...]], ...}
 			data = dict()
 			data[0] = []
-			sleep(0.5)
+			motion.setAngles("HeadYaw",[0],self.constants.MAX_MOTOR_SPEED)
+			sleep(1)
 			speechProxy.say("I am listening")
 			while True:
+				
 				# collect enough ITDs and ILDs in each frequency channel
-				if len(data[0]) < self.NUM_MEASUREMENTS:	
+				if len(data[0]) < self.NUM_MEASUREMENTS:
 					sleep(0.1)
 					
 					left_sig = myAudio.soundData[2,:]
@@ -261,22 +264,27 @@ class SoundLocalizer:
 
 					# sort probability dictionary
 					probabilities = sorted(probabilities.items(), key=lambda x: x[1], reverse=True) 
-					print probabilities
+					#print probabilities
 					# get angle with highest probability
 					desiredAngle = probabilities[0][0]
 
-					motion.setAngles("HeadYaw",[desiredAngle*almath.TO_RAD],self.constants.MAX_MOTOR_SPEED)
+					motion.setAngles("HeadYaw",[(desiredAngle)*almath.TO_RAD],self.constants.MAX_MOTOR_SPEED)
 					speechProxy.say("Sound detected at " + str(desiredAngle) + " degrees")
-
+					print "Sound detected at " + str(desiredAngle) + " degrees"
 					# reset dictionary
 					data = dict()
 					data[0] = []
+					sleep(1)
+					motion.setAngles("HeadYaw",[0],self.constants.MAX_MOTOR_SPEED)
+					
 					#myBroker.shutdown()
 					sleep(2)
+					speechProxy.say("I am listening")
 					#sys.exit(0)
 
 		except KeyboardInterrupt:
 			print "Interrupted by user, shutting down"
+			motion.setStiffnesses(["HeadYaw","HeadPitch"],[0.0,0.0])
 			myBroker.shutdown()
 			sleep(2)
 			sys.exit(0)

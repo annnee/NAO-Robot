@@ -9,7 +9,7 @@ from audioreceiver import AudioReceiver
 
 def main():
 
-	NAO_IP = "169.254.103.126"  # "169.254.88.3"
+	NAO_IP =  "169.254.103.126"  # "169.254.88.3"
 	NAO_PORT = 9559
 	CHANNELS = 32 # number of frequency channels
 	BUFFER_SIZE = 4096 # this is the size of the audio buffer used by naoqi
@@ -50,7 +50,7 @@ def main():
 		ilds2 = []
 		itds2 = []
 
-		fig2, ax2 = plt.subplots(5,1)
+		fig2, ax2 = plt.subplots(2,1)
 		plt.xlabel("ILD")
 		plt.ylabel("ITD")
 		#ax2[0].set_title("ILD vs ITD for ch 20")#+ lowerF+(3*freqRange)+ "-"+ lowerF+((3+1)*freqRange)+"Hz")
@@ -61,10 +61,10 @@ def main():
 
 		while True:
 			sleep(0.1)
-			left_sig = myAudio.soundData[2,:]
+			left_sig = myAudio.soundData[0,:] #orig = 2
 			left_an = auditory_nerve(left_sig,lowerF,upperF,CHANNELS,48000)
 			h1.set_data(left_an)
-			right_sig = myAudio.soundData[3,:]
+			right_sig = myAudio.soundData[1,:] #orig = 3
 			right_an = auditory_nerve(right_sig,lowerF,upperF,CHANNELS,48000)
 			h2.set_data(right_an)
 			plt.draw()
@@ -87,13 +87,13 @@ def main():
 				ild = 10.0*np.log10(left_energy/right_energy)
 				print "channel",chan, "freq range: ", lowerF+(chan*freqRange), "-", lowerF+((chan+1)*freqRange), "Hz, ILD:", ild, "ITD:", itd
 
-				if (chan==27):
+				if (chan==10):
 					ilds.append(ild)
 					itds.append(itd)
 					H, xedges, yedges = np.histogram2d(itds, ilds, bins=(xedges, yedges))
 					im = ax2[0].imshow(H, interpolation='nearest', origin='low', aspect='auto', extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]])
 
-				elif (chan==28):
+				elif (chan==30):
 					ilds2.append(ild)
 					itds2.append(itd)
 					H, xedges, yedges = np.histogram2d(itds2, ilds2, bins=(xedges, yedges))
