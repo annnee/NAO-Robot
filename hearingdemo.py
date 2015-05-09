@@ -9,7 +9,7 @@ from audioreceiver import AudioReceiver
 
 def main():
 
-	NAO_IP =  "169.254.103.126"  # "169.254.88.3"
+	NAO_IP =  "169.254.88.3" #"169.254.103.126"
 	NAO_PORT = 9559
 	CHANNELS = 32 # number of frequency channels
 	BUFFER_SIZE = 4096 # this is the size of the audio buffer used by naoqi
@@ -85,7 +85,9 @@ def main():
 				ccg = normalise(ccg) # check this - is it needed?
 				itd = np.argmax(ccg)-MAX_DELAY
 				ild = 10.0*np.log10(left_energy/right_energy)
-				print "channel",chan, "freq range: ", lowerF+(chan*freqRange), "-", lowerF+((chan+1)*freqRange), "Hz, ILD:", ild, "ITD:", itd
+				
+				print "db: ", 10.0*np.log10(left_energy)
+				#print "channel",chan, "freq range: ", lowerF+(chan*freqRange), "-", lowerF+((chan+1)*freqRange), "Hz, ILD:", ild, "ITD:", itd
 
 				if (chan==10):
 					ilds.append(ild)
