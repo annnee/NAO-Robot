@@ -10,8 +10,8 @@ import numpy as np
 import Image                    # Python Image Library
 from naoqi import ALProxy
 
-
-def showNaoImage(IP, PORT):
+# Take and save an image using the robot's camera and returns an array representation of the image
+def takeNaoImage(IP, PORT):
   camProxy = ALProxy("ALVideoDevice", IP, PORT)
   resolution = 2    # VGA
   colorSpace = 11   # RGB
@@ -41,8 +41,14 @@ def showNaoImage(IP, PORT):
   # Save the image.
   im.save("camImage.png", "PNG")
   I = np.asarray(Image.open('camImage.png'), dtype='int64')
+  
+  return I
+  
+# return an image with all colors but red removed 
+def redFilter(I):
   newImg = np.copy(I)
-
+  imageHeight = len(newImg)
+  imageWidth = len(newImg[0])
   for x in range(0,imageHeight):
     for y in range(0,imageWidth):
       R = newImg[x,y][0] 
@@ -103,4 +109,5 @@ def showNaoImage(IP, PORT):
   
 NAO_IP = "169.254.88.3" #"169.254.103.126" 
 NAO_PORT = 9559
-showNaoImage(NAO_IP, NAO_PORT)
+img = showNaoImage(NAO_IP, NAO_PORT)
+redFilter(img)
